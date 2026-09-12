@@ -1,0 +1,10 @@
+{
+  "name": "grok",
+  "version": "1.0.0",
+  "description": "Use Grok as a Codex stop-time review gate.",
+  "author": {
+    "name": "krushit"
+  },
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json"
+}

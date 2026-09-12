@@ -9,6 +9,8 @@ If the previous Codex turn was only a status update, a summary, a setup/login ch
 Challenge whether that specific work and its design choices should ship.
 
 {{CODEX_RESPONSE_BLOCK}}
+
+{{GIT_SNAPSHOT_BLOCK}}
 </task>
 
 <compact_output_contract>
@@ -25,7 +27,9 @@ Use BLOCK only if the previous turn made code changes and you found something th
 
 <grounding_rules>
 Ground every blocking claim in the repository context or tool outputs you inspected during this run.
-Do not treat the previous Codex response as proof that code changes happened; verify that from the repository state before you block.
-Do not block based on older edits from earlier turns when the immediately previous turn did not itself make direct edits.
+Do not treat the previous Codex response as proof that code changes happened; verify that from the repository snapshot before you block.
+If the snapshot is clean and the last assistant message was not a commit, ALLOW immediately.
+Only BLOCK on issues in files that appear in the snapshot AND are consistent with the last assistant message describing those edits.
+Do not treat dirty files the last message did not mention as this-turn work.
 Do not block on nits, style preferences, or missing follow-up work that the user did not ask for.
 </grounding_rules>

@@ -6,8 +6,8 @@ import path from "node:path";
 import { resolveWorkspaceRoot } from "./workspace.mjs";
 
 const STATE_VERSION = 1;
-const PLUGIN_DATA_ENVS = ["PLUGIN_DATA", "CLAUDE_PLUGIN_DATA"];
 const STATE_FILE_NAME = "state.json";
+const STABLE_STATE_ROOT = path.join(os.homedir(), ".codex", "plugins", "data", "grok-plugin-codex", "state");
 
 function defaultState() {
   return {
@@ -18,16 +18,7 @@ function defaultState() {
   };
 }
 
-function pluginDataDir() {
-  for (const name of PLUGIN_DATA_ENVS) {
-    if (process.env[name]) {
-      return process.env[name];
-    }
-  }
-  return null;
-}
-
-export function resolveStateDir(cwd, fallbackRoot) {
+function workspaceKey(cwd) {
   const workspaceRoot = resolveWorkspaceRoot(cwd);
   let canonical = workspaceRoot;
   try {
@@ -38,9 +29,45 @@ export function resolveStateDir(cwd, fallbackRoot) {
   const slugSource = path.basename(workspaceRoot) || "workspace";
   const slug = slugSource.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "workspace";
   const hash = createHash("sha256").update(canonical).digest("hex").slice(0, 16);
-  const dataDir = pluginDataDir();
-  const stateRoot = dataDir ? path.join(dataDir, "state") : fallbackRoot;
-  return path.join(stateRoot, `${slug}-${hash}`);
+  return `${slug}-${hash}`;
+}
+
+function copyIfMissing(fromFile, toFile) {
+  if (!fromFile || fromFile === toFile || !fs.existsSync(fromFile) || fs.existsSync(toFile)) {
+    return false;
+  }
+  fs.mkdirSync(path.dirname(toFile), { recursive: true });
+  fs.copyFileSync(fromFile, toFile);
+  return true;
+}
+
+function migrateLegacyState(cwd, fallbackRoot) {
+  const key = workspaceKey(cwd);
+  const destFile = path.join(STABLE_STATE_ROOT, key, STATE_FILE_NAME);
+  if (fs.existsSync(destFile)) {
+    return;
+  }
+  const candidates = [];
+  if (fallbackRoot) {
+    candidates.push(path.join(fallbackRoot, key, STATE_FILE_NAME));
+  }
+  for (const name of ["PLUGIN_DATA", "CLAUDE_PLUGIN_DATA", "GROK_PLUGIN_DATA"]) {
+    if (process.env[name]) {
+      candidates.push(path.join(process.env[name], "state", key, STATE_FILE_NAME));
+    }
+  }
+  candidates.push(path.join(os.tmpdir(), "codex-companion", key, STATE_FILE_NAME));
+  candidates.push(path.join(os.tmpdir(), "grok-companion", key, STATE_FILE_NAME));
+  for (const candidate of candidates) {
+    if (copyIfMissing(candidate, destFile)) {
+      return;
+    }
+  }
+}
+
+export function resolveStateDir(cwd, fallbackRoot = STABLE_STATE_ROOT) {
+  migrateLegacyState(cwd, fallbackRoot);
+  return path.join(STABLE_STATE_ROOT, workspaceKey(cwd));
 }
 
 export function loadState(cwd, fallbackRoot) {
