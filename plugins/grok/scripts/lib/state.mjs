@@ -47,17 +47,16 @@ function migrateLegacyState(cwd, fallbackRoot) {
   if (fs.existsSync(destFile)) {
     return;
   }
+  const ownMarker = "grok-plugin-codex";
   const candidates = [];
   if (fallbackRoot) {
     candidates.push(path.join(fallbackRoot, key, STATE_FILE_NAME));
   }
   for (const name of ["PLUGIN_DATA", "CLAUDE_PLUGIN_DATA", "GROK_PLUGIN_DATA"]) {
-    if (process.env[name]) {
+    if (process.env[name] && String(process.env[name]).includes(ownMarker)) {
       candidates.push(path.join(process.env[name], "state", key, STATE_FILE_NAME));
     }
   }
-  candidates.push(path.join(os.tmpdir(), "codex-companion", key, STATE_FILE_NAME));
-  candidates.push(path.join(os.tmpdir(), "grok-companion", key, STATE_FILE_NAME));
   for (const candidate of candidates) {
     if (copyIfMissing(candidate, destFile)) {
       return;

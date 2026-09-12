@@ -40,6 +40,19 @@ export function getGrokAvailability(cwd) {
   return { available: true, binary, detail: version.detail };
 }
 
+function hasUsableSecret(value, depth = 0) {
+  if (depth > 6 || value == null) {
+    return false;
+  }
+  if (typeof value === "string") {
+    return value.trim().length >= 12;
+  }
+  if (typeof value === "object") {
+    return Object.values(value).some((entry) => hasUsableSecret(entry, depth + 1));
+  }
+  return false;
+}
+
 export function getGrokAuthStatus() {
   const authFile = path.join(GROK_HOME, "auth.json");
   if (!fs.existsSync(authFile)) {
@@ -47,9 +60,8 @@ export function getGrokAuthStatus() {
   }
   try {
     const parsed = JSON.parse(fs.readFileSync(authFile, "utf8"));
-    const keys = parsed && typeof parsed === "object" ? Object.keys(parsed) : [];
-    if (keys.length === 0) {
-      return { loggedIn: false, detail: "auth.json is empty. Run `grok login`." };
+    if (!hasUsableSecret(parsed)) {
+      return { loggedIn: false, detail: "auth.json has no usable credentials. Run `grok login`." };
     }
     return { loggedIn: true, detail: "signed in" };
   } catch {
