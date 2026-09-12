@@ -1,27 +1,45 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 import { runCommand } from "./process.mjs";
 
-const BASELINE_FILE = "turn-baseline.json";
+function sha256(text) {
+  return createHash("sha256").update(String(text ?? ""), "utf8").digest("hex");
+}
+
+function sessionKey(sessionId) {
+  return String(sessionId || "default").replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80) || "default";
+}
+
+function baselinePath(stateDir, sessionId) {
+  return path.join(stateDir, `turn-baseline-${sessionKey(sessionId)}.json`);
+}
 
 function captureWorkingTree(cwd) {
   const head = runCommand("git", ["rev-parse", "HEAD"], { cwd });
   const porcelain = runCommand("git", ["status", "--porcelain=v1", "-uall"], { cwd });
+  const unstaged = runCommand("git", ["diff", "HEAD"], { cwd });
+  const staged = runCommand("git", ["diff", "--cached"], { cwd });
   return {
     head: head.status === 0 ? head.stdout.trim() : "",
     porcelain: porcelain.status === 0 ? porcelain.stdout : "",
+    unstagedHash: sha256(unstaged.status === 0 ? unstaged.stdout : ""),
+    stagedHash: sha256(staged.status === 0 ? staged.stdout : ""),
     capturedAt: new Date().toISOString()
   };
 }
 
-export function saveTurnBaseline(cwd, stateDir) {
+export function saveTurnBaseline(cwd, stateDir, sessionId) {
   if (!stateDir) {
     return;
   }
   fs.mkdirSync(stateDir, { recursive: true });
-  const payload = captureWorkingTree(cwd);
-  fs.writeFileSync(path.join(stateDir, BASELINE_FILE), `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  fs.writeFileSync(
+    baselinePath(stateDir, sessionId),
+    `${JSON.stringify(captureWorkingTree(cwd), null, 2)}\n`,
+    "utf8"
+  );
 }
 
 function parsePorcelain(text) {
@@ -33,13 +51,13 @@ function parsePorcelain(text) {
   );
 }
 
-export function formatGitSnapshot(cwd, stateDir) {
+export function formatGitSnapshot(cwd, stateDir, sessionId) {
   const now = captureWorkingTree(cwd);
-  const baselineFile = stateDir ? path.join(stateDir, BASELINE_FILE) : null;
+  const file = stateDir ? baselinePath(stateDir, sessionId) : null;
   let baseline = null;
-  if (baselineFile && fs.existsSync(baselineFile)) {
+  if (file && fs.existsSync(file)) {
     try {
-      baseline = JSON.parse(fs.readFileSync(baselineFile, "utf8"));
+      baseline = JSON.parse(fs.readFileSync(file, "utf8"));
     } catch {
       baseline = null;
     }
@@ -47,9 +65,7 @@ export function formatGitSnapshot(cwd, stateDir) {
 
   const lines = ["Turn-scoped repository snapshot:"];
   if (!baseline) {
-    lines.push(
-      "No turn baseline (UserPromptSubmit hook did not run). Falling back to the current dirty tree."
-    );
+    lines.push("No turn baseline. Falling back to the current dirty tree.");
     const status = runCommand("git", ["status", "--short", "--untracked-files=all"], { cwd });
     const statusText = status.status === 0 ? status.stdout.trim() : "";
     if (statusText) {
@@ -65,6 +81,8 @@ export function formatGitSnapshot(cwd, stateDir) {
   const after = parsePorcelain(now.porcelain);
   const added = [...after].filter((line) => !before.has(line));
   const removed = [...before].filter((line) => !after.has(line));
+  const contentChanged =
+    baseline.unstagedHash !== now.unstagedHash || baseline.stagedHash !== now.stagedHash;
   let committedFiles = "";
   if (now.head && baseline.head && now.head !== baseline.head) {
     const names = runCommand("git", ["diff", "--name-only", `${baseline.head}..${now.head}`], { cwd });
@@ -75,7 +93,14 @@ export function formatGitSnapshot(cwd, stateDir) {
     }
   }
 
-  if (added.length === 0 && removed.length === 0 && !committedFiles) {
+  if (contentChanged) {
+    const stat = runCommand("git", ["diff", "--stat", "HEAD"], { cwd });
+    lines.push("Working-tree content changed since turn start (includes further edits to already-dirty files).");
+    if (stat.status === 0 && stat.stdout.trim()) {
+      lines.push(stat.stdout.trim());
+    }
+  }
+  if (added.length === 0 && removed.length === 0 && !committedFiles && !contentChanged) {
     lines.push("No working-tree or HEAD changes since the start of this turn.");
     return lines.join("\n");
   }

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import process from "node:process";
 
 import { resolveWorkspaceRoot } from "./workspace.mjs";
 
@@ -86,15 +87,67 @@ export function loadState(cwd, fallbackRoot) {
   }
 }
 
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function withStateLock(dir, fn) {
+  fs.mkdirSync(dir, { recursive: true });
+  const lock = path.join(dir, "state.lock");
+  const deadline = Date.now() + 5000;
+  while (true) {
+    try {
+      const fd = fs.openSync(lock, "wx");
+      fs.writeFileSync(fd, String(process.pid));
+      fs.closeSync(fd);
+      break;
+    } catch (error) {
+      if (error.code === "EEXIST") {
+        try {
+          const owner = Number(fs.readFileSync(lock, "utf8").trim());
+          if (owner && !pidAlive(owner)) {
+            fs.unlinkSync(lock);
+            continue;
+          }
+        } catch {
+          // retry until deadline
+        }
+      }
+      if (error.code !== "EEXIST" || Date.now() > deadline) {
+        throw error;
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    try {
+      fs.unlinkSync(lock);
+    } catch {
+      // ignore
+    }
+  }
+}
+
 export function saveState(cwd, fallbackRoot, state) {
   const dir = resolveStateDir(cwd, fallbackRoot);
-  fs.mkdirSync(dir, { recursive: true });
-  const next = {
-    version: STATE_VERSION,
-    config: { ...defaultState().config, ...(state.config ?? {}) }
-  };
-  fs.writeFileSync(path.join(dir, STATE_FILE_NAME), `${JSON.stringify(next, null, 2)}\n`, "utf8");
-  return next;
+  return withStateLock(dir, () => {
+    const next = {
+      version: STATE_VERSION,
+      config: { ...defaultState().config, ...(state.config ?? {}) }
+    };
+    const filePath = path.join(dir, STATE_FILE_NAME);
+    const tmp = `${filePath}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+    fs.renameSync(tmp, filePath);
+    return next;
+  });
 }
 
 export function getConfig(cwd, fallbackRoot) {

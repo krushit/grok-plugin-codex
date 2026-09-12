@@ -81,7 +81,11 @@ function main() {
           "</untrusted_last_message>"
         ].join("\n")
       : "",
-    GIT_SNAPSHOT_BLOCK: formatGitSnapshot(cwd, resolveStateDir(cwd, FALLBACK_STATE_ROOT))
+    GIT_SNAPSHOT_BLOCK: formatGitSnapshot(
+      cwd,
+      resolveStateDir(cwd, FALLBACK_STATE_ROOT),
+      input.session_id || input.sessionId || ""
+    )
   });
 
   let result;
