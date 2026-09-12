@@ -1,0 +1,18 @@
+{
+  "name": "grok-plugin-codex",
+  "owner": {
+    "name": "krushit"
+  },
+  "metadata": {
+    "description": "Use Grok as a Codex stop-time review gate.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "grok",
+      "description": "When Codex tries to stop, Grok reviews that turn and can block.",
+      "version": "1.0.0",
+      "source": "./plugins/grok"
+    }
+  ]
+}

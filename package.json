@@ -1,0 +1,14 @@
+{
+  "name": "grok-plugin-codex",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Use Grok as a Codex stop-time review gate.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  }
+}
